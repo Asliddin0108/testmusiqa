@@ -72,33 +72,47 @@ exit();
 }
 
 /* ================= INSTAGRAM ================= */
-if(strpos($text, "instagram.com") !== false){
+if (strpos($text, "instagram.com") !== false) {
 
-$api_url = "https://xuss.us/IG1/?url=".urlencode($text); // <<< YANGI API
-$json = json_decode(file_get_contents($api_url), true);
-$video_url = $json['video'];
+    $api_url = "https://xuss.us/IG1/?url=" . urlencode($text);
+    $json = json_decode(file_get_contents($api_url), true);
 
-bot('sendMessage',[
-'chat_id' => $cid,
-'text' => "📥",
-]);
-sleep(2.8);
+    // turli formatlarni ushlab olish
+    $video_url = $json['video']
+        ?? $json['url']
+        ?? $json['data']['video']
+        ?? null;
 
-bot('deletemessage',[
-'chat_id' => $cid,
-'message_id' => $mid + 1,
-]);
-sleep(0.3);
+    if (!$video_url) {
+        bot('sendMessage', [
+            'chat_id' => $cid,
+            'text' => "❌ Video topilmadi (API javobi mos emas)"
+        ]);
+        exit();
+    }
 
-bot('sendVideo',[
-'chat_id' => $cid,
-'video' => $video_url,
-'caption' => "$matin @$botname",
-'parse_mode' => 'html',
-'reply_markup' => $ortga,
-]);
-exit();
+    bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "📥",
+    ]);
+    sleep(2.8);
+
+    bot('deletemessage', [
+        'chat_id' => $cid,
+        'message_id' => $mid + 1,
+    ]);
+    sleep(0.3);
+
+    bot('sendVideo', [
+        'chat_id' => $cid,
+        'video' => $video_url,
+        'caption' => "$matin @$botname",
+        'parse_mode' => 'html',
+        'reply_markup' => $ortga,
+    ]);
+    exit();
 }
+
 
 /* ================= TIKTOK (TEGMADIK) ================= */
 if (strpos($text, "vt.tiktok.com") !== false) {
