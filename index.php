@@ -2,19 +2,21 @@
 ob_start();
 define('API_KEY','8253736025:AAHmMPac7DmA_fi01urRtI0wwAfd7SAYArE');
 
-function bot($method,$datas=[]){
-$url = "https://api.telegram.org/bot".API_KEY."/".$method;
-$ch = curl_init();
-curl_setopt($ch,CURLOPT_URL,$url);
-curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
-curl_setopt($ch,CURLOPT_POSTFIELDS,$datas);
-$res = curl_exec($ch);
-if(curl_error($ch)){
-var_dump(curl_error($ch));
-}else{
-return json_decode($res);
+/* ================= FETCH JSON (cURL) ================= */
+function fetchJson($url) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT => 'Mozilla/5.0'
+    ]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($res, true);
 }
-}
+
 
 $update = json_decode(file_get_contents('php://input'));
 
