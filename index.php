@@ -87,7 +87,7 @@ exit();
 if ($text && strpos($text, "instagram.com") !== false) {
 
     $api_url = "https://xuss.us/IG1/?url=" . urlencode($text);
-    $json = json_decode(file_get_contents($api_url), true);
+    $json = fetchJson($api_url);
 
     // 1️⃣ har xil formatlarni ushlab olish
     $video_url =
@@ -236,7 +236,7 @@ if ($callbackdata && strpos($callbackdata, "-") !== false) {
 if ($text && !$callbackdata) {
 
     $api_url = "https://api.alijonov.uz/api/music.php?text=" . urlencode($text) . "&page=1";
-    $api = json_decode(file_get_contents($api_url), true);
+    $api = fetchJson($api_url);
 
     if (!isset($api['data']) || empty($api['data'])) {
         bot('sendMessage', [
