@@ -1,863 +1,484 @@
 <?php
 ob_start();
-error_reporting(0);
-date_default_timezone_set("Asia/Tashkent");
+define('API_KEY', '8253736025:AAHmMPac7DmA_fi01urRtI0wwAfd7SAYArE');
 
+// ========== Faylda qidiruv so'rovlarini saqlash ==========
+$cache_file = __DIR__ . '/search_cache.json';
 
-define("API_KEY","8253736025:AAHmMPac7DmA_fi01urRtI0wwAfd7SAYArE");
-$administrator = "8238730404";
-
-
-/*
-Instagram Save Bot Kodi
-
-Manba: @Org_Coder (chopilmasin)
-Tarqatildi: @TexnoPHPuz kanalida!
-*/
-
-
-function bot($method,$steps=[]){
-$url = "https://api.telegram.org/bot".API_KEY."/".$method;
-$ch = curl_init();
-curl_setopt($ch,CURLOPT_URL,$url);
-curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
-curl_setopt($ch,CURLOPT_POSTFIELDS,$steps);
-$res = curl_exec($ch);
-if(curl_error($ch)){
-var_dump(curl_error($ch));
-}else{
-return json_decode($res);
-}
+function saveSearch($id, $query) {
+    global $cache_file;
+    $data = file_exists($cache_file) ? json_decode(file_get_contents($cache_file), true) : [];
+    $data[$id] = ['query' => $query, 'time' => time()];
+    // Eski yozuvlarni tozalash (1 soatdan eski)
+    foreach ($data as $key => $val) {
+        if (time() - $val['time'] > 3600) unset($data[$key]);
+    }
+    file_put_contents($cache_file, json_encode($data));
 }
 
+function getSearch($id) {
+    global $cache_file;
+    if (!file_exists($cache_file)) return null;
+    $data = json_decode(file_get_contents($cache_file), true);
+    return $data[$id]['query'] ?? null;
+}
 
+/* ================= BOT FUNKSIYA ================= */
+function bot($method, $data = []) {
+    $url = "https://api.telegram.org/bot" . API_KEY . "/$method";
+    $ch = curl_init($url);
+    
+    // Agar fayl bo'lsa multipart ishlatish
+    $hasFile = false;
+    foreach ($data as $val) {
+        if ($val instanceof CURLFile) {
+            $hasFile = true;
+            break;
+        }
+    }
+    
+    $options = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT => 120,
+    ];
+    
+    if ($hasFile) {
+        $options[CURLOPT_POSTFIELDS] = $data;
+    } else {
+        $options[CURLOPT_POSTFIELDS] = http_build_query($data);
+    }
+    
+    curl_setopt_array($ch, $options);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($res);
+}
+
+/* ================= FETCH JSON ================= */
+function fetchJson($url) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    ]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($res, true);
+}
+
+/* ================= FAYLNI YUKLAB OLISH ================= */
+function downloadFile($url, $filename) {
+    $ch = curl_init($url);
+    $fp = fopen($filename, 'w+');
+    curl_setopt_array($ch, [
+        CURLOPT_FILE => $fp,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 120,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT => 'Mozilla/5.0'
+    ]);
+    $success = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    fclose($fp);
+    
+    if ($success && $httpCode == 200 && filesize($filename) > 1000) {
+        return true;
+    }
+    @unlink($filename);
+    return false;
+}
+
+/* ================= MUSIQA QIDIRISH FUNKSIYASI ================= */
+function searchMusic($query) {
+    // 1-API: alijonov
+    $api1 = fetchJson("https://api.alijonov.uz/api/music.php?text=" . urlencode($query) . "&page=1");
+    if (isset($api1['data']) && !empty($api1['data'])) {
+        return $api1['data'];
+    }
+    
+    // 2-API: brrfrr (zaxira)
+    $api2 = fetchJson("https://bfrr-api.vercel.app/api/music?query=" . urlencode($query));
+    if (isset($api2['result']) && !empty($api2['result'])) {
+        $result = [];
+        foreach ($api2['result'] as $item) {
+            $result[] = [
+                'artist' => $item['artist'] ?? 'Unknown',
+                'title' => $item['title'] ?? 'Unknown',
+                'url' => $item['download'] ?? $item['url'] ?? null,
+                'duration' => $item['duration'] ?? ''
+            ];
+        }
+        return $result;
+    }
+    
+    return null;
+}
+
+// ========== UPDATE ==========
 $update = json_decode(file_get_contents('php://input'));
-$message = $update->message;
-$mid = $message->message_id;
-$chat_id = $message->chat->id;
-$cid = $message->chat->id;
-$callcid = $update->callback_query->message->chat->id;
-$cmid = $update->callback_query->message->message_id; 
-$data = $update->callback_query->data;
-$qid = $update->callback_query->id;
-$cid2 = $update->callback_query->message->chat->id;
-$mid2 = $update->callback_query->message->message_id;
-$uid = $message->from->id;
-$name = $message->chat->first_name;
-$text = $message->text;  
-$tx= $message->text;  
-$cty = $update->message->chat->type;
-$type = $update->message->chat->type;
-$uid= $message->from->id;
-$ismi = $update->message->from->first_name;
-$ismi2 = $update->message->from->last_name;
-$username= $update->message->from->username;
-$name = "<a href='tg://user?id=$uid'> $ismi $ismi2 </a>";
-$time = date('H:i');
-$sana = date('d.m.Y');
-$Bot = bot('getme',['bot'])->result->username;
 
-$bot = bot('getme',['bot'])->result->username; //botiz userini qoyasiz
-$text = $message->text;
-$back = "◀️ Ortga";
-$step = file_get_contents("step/$cid/$cid.txt");
-$blocks = file_get_contents("data/blocks.txt");
-$holat = file_get_contents("data/bot.txt");
-$kanal = file_get_contents("data/kanal.txt");
-$channel = file_get_contents("data/channel.txt");
-$statistika = file_get_contents("data/statistika.txt");
-$admins = file_get_contents("data/admins.txt");
-$admin = array($administrator,$admins);
+if (!isset($update->message) && !isset($update->callback_query)) {
+    http_response_code(200);
+    exit;
+}
 
-#---------------------------------------
-mkdir("data");
-mkdir("step");
-mkdir("step/$cid");
-#---------------------------------------
+$message  = $update->message ?? null;
+$callback = $update->callback_query ?? null;
 
-$panel = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"📝 Pochta tizimi"],['text'=>"📊 Statistika"]],
-[['text'=>"📢 Kanallar boshqaruvi"],['text'=>"🔐 Blok tizimi"]],
-[['text'=>"⚙ Bot sozlamalari"],['text'=>"⭐️ Adminlar boshqaruvi"]],
-[['text'=>"$back"]],
-]
-]);
+$cid  = $message->chat->id ?? null;
+$type = $message->chat->type ?? null;
+$mid  = $message->message_id ?? null;
+$text = $message->text ?? null;
 
-$message_manager = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"💬 Forward xabar yuborish"],],
-[['text'=>"👨🏻‍💻 Boshqaruv paneli"],],
-]
-]);
+$callbackdata = $callback->data ?? null;
+$callback_id  = $callback->id ?? null;
+$call_cid     = $callback->message->chat->id ?? null;
+$call_mid     = $callback->message->message_id ?? null;
+$call_user_id = $callback->from->id ?? null;
 
-$channel_manager = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"📢 Kanal qoʻshish"],['text'=>"📢 Kanalni oʻchirish"],],
-[['text'=>"📋 Kanallar roʻyxati"],['text'=>"📋 Kanallar roʻyxatini oʻchirish"],],
-[['text'=>"👨🏻‍💻 Boshqaruv paneli"],],
-]
-]);
+$botInfo = bot('getMe', []);
+$botname = $botInfo->result->username ?? 'unknown_bot';
 
-$blok_manager = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"✅ Blokdan olish"],['text'=>"❌ Bloklash"],],
-[['text'=>"📋 Bloklanganlar roʻyxati"],['text'=>"📋 Bloklanganlar roʻyxatini oʻchirish"],],
-[['text'=>"👨🏻‍💻 Boshqaruv paneli"],],
-]
-]);
+$date = date("d.m.Y");
+$soat = date("H:i");
 
-$bot_manager = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"✅ Botni yoqish"],['text'=>"❌ Botni o‘chirish"],],
-[['text'=>"👨🏻‍💻 Boshqaruv paneli"],],
-]
-]);
-
-$admins_manager = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"➕ Admin qoʻshish"],['text'=>"🛑 Adminlikdan olish"],],
-[['text'=>"📋 Adminlar roʻyxati"],['text'=>"📋 Adminlar roʻyxatini oʻchirish"],],
-[['text'=>"👨🏻‍💻 Boshqaruv paneli"],],
-]
+$bosh = json_encode([
+    'inline_keyboard' => [
+        [['text' => "➕ Guruhga qo'shish", 'url' => "https://t.me/$botname?startgroup=new"]],
+    ]
 ]);
 
 $ortga = json_encode([
-'resize_keyboard'=>true,
-'keyboard'=>[
-[['text'=>"$back"],],
-]
+    'inline_keyboard' => [
+        [['text' => "❌ O'chirish", 'callback_data' => "del"]],
+    ]
 ]);
 
-if(isset($message)){
-$get = file_get_contents("data/statistika.txt");
-if(mb_stripos($get,$uid)==false){
-file_put_contents("data/statistika.txt", "$get\n$uid");
+$matin = "📥 @$botname orqali yuklandi";
+
+/* ================= DELETE CALLBACK ================= */
+if ($callbackdata == "del") {
+    bot('answerCallbackQuery', [
+        'callback_query_id' => $callback_id,
+        'text' => "✅ O'chirildi"
+    ]);
+    bot('deleteMessage', [
+        'chat_id' => $call_cid,
+        'message_id' => $call_mid
+    ]);
+    exit;
+}
+
+/* ================= MUSIC DOWNLOAD CALLBACK ================= */
+if ($callbackdata && preg_match('/^m_(\d+)_(\d+)$/', $callbackdata, $matches)) {
+    
+    $search_id = $matches[1];
+    $index = (int)$matches[2];
+    
+    // Qidiruv so'rovini olish
+    $query = getSearch($search_id);
+    
+    if (!$query) {
+        bot("answerCallbackQuery", [
+            "callback_query_id" => $callback_id,
+            "text" => "❌ Vaqt o'tdi, qaytadan qidiring!",
+            "show_alert" => true
+        ]);
+        exit;
+    }
+    
+    bot("answerCallbackQuery", [
+        "callback_query_id" => $callback_id,
+        "text" => "🎧 Musiqa yuklanmoqda...",
+        "show_alert" => false
+    ]);
+    
+    // Musiqalarni qidirish
+    $musicList = searchMusic($query);
+    
+    if (!$musicList || !isset($musicList[$index])) {
+        bot('sendMessage', [
+            'chat_id' => $call_cid,
+            'text' => "❌ Musiqa topilmadi, qaytadan qidiring"
+        ]);
+        exit;
+    }
+    
+    $music = $musicList[$index];
+    $artist = $music['artist'] ?? 'Unknown';
+    $title  = $music['title'] ?? 'Unknown';
+    $audio_url = $music['url'] ?? null;
+    
+    if (!$audio_url) {
+        bot('sendMessage', [
+            'chat_id' => $call_cid,
+            'text' => "❌ Audio URL topilmadi"
+        ]);
+        exit;
+    }
+    
+    // Loading xabari
+    $loading = bot('sendMessage', [
+        'chat_id' => $call_cid,
+        'text' => "⏳ <b>$artist - $title</b>\n\n📥 Yuklanmoqda...",
+        'parse_mode' => 'html'
+    ]);
+    $loading_mid = $loading->result->message_id ?? null;
+    
+    // Faylni serverga yuklash
+    $temp_file = __DIR__ . '/temp_' . uniqid() . '.mp3';
+    $downloaded = downloadFile($audio_url, $temp_file);
+    
+    if ($downloaded && file_exists($temp_file)) {
+        // Faylni Telegramga yuborish
+        $caption = "🎵 <b>$artist</b> - <i>$title</i>\n\n$matin";
+        
+        $result = bot('sendAudio', [
+            'chat_id' => $call_cid,
+            'audio' => new CURLFile($temp_file, 'audio/mpeg', "$artist - $title.mp3"),
+            'caption' => $caption,
+            'parse_mode' => 'html',
+            'title' => $title,
+            'performer' => $artist
+        ]);
+        
+        // Temp faylni o'chirish
+        @unlink($temp_file);
+        
+        // Loading xabarini o'chirish
+        if ($loading_mid) {
+            bot('deleteMessage', ['chat_id' => $call_cid, 'message_id' => $loading_mid]);
+        }
+        
+        if (!$result->ok) {
+            bot('sendMessage', [
+                'chat_id' => $call_cid,
+                'text' => "❌ Audio yuborishda xatolik"
+            ]);
+        }
+    } else {
+        // Agar yuklash ishlamasa, to'g'ridan-to'g'ri URL orqali sinash
+        if ($loading_mid) {
+            bot('deleteMessage', ['chat_id' => $call_cid, 'message_id' => $loading_mid]);
+        }
+        
+        $result = bot('sendAudio', [
+            'chat_id' => $call_cid,
+            'audio' => $audio_url,
+            'caption' => "🎵 <b>$artist</b> - <i>$title</i>\n\n$matin",
+            'parse_mode' => 'html'
+        ]);
+        
+        if (!$result->ok) {
+            bot('sendMessage', [
+                'chat_id' => $call_cid,
+                'text' => "❌ Musiqa yuklab bo'lmadi. Boshqa qo'shiqni tanlang."
+            ]);
+        }
+    }
+    exit;
+}
+
+/* ================= START ================= */
+if ($text == "/start" || $text == "/start@$botname") {
+    bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "<b>🔥 Assalomu alaykum, @$botname ga Xush kelibsiz!
+
+📥 Yuklovchi:
+• Instagram - video, rasm, reels
+• TikTok - suv belgisiz video
+• YouTube - video
+
+🎵 Musiqa qidirish:
+Shunchaki qo'shiq nomini yozing!
+
+Masalan: <code>Imron Nega ketding</code>
+
+😎 Bot guruhlarda ham ishlaydi!</b>",
+        'parse_mode' => 'html',
+        'reply_markup' => $bosh,
+    ]);
+    exit;
+}
+
+/* ================= INSTAGRAM ================= */
+if ($text && strpos($text, "instagram.com") !== false) {
+
+    $loading = bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "📥 Instagram yuklanmoqda..."
+    ]);
+    $loadingMid = $loading->result->message_id ?? null;
+
+    $api_url = "https://xuss.us/IG1/?url=" . urlencode($text);
+    $json = fetchJson($api_url);
+
+    $video_url = $json['video'] 
+        ?? $json['url'] 
+        ?? $json['data']['video'] 
+        ?? $json['videos'][0]['url'] 
+        ?? null;
+
+    if ($loadingMid) {
+        bot('deleteMessage', ['chat_id' => $cid, 'message_id' => $loadingMid]);
+    }
+
+    if (!$video_url) {
+        bot('sendMessage', [
+            'chat_id' => $cid,
+            'text' => "❌ Instagram video topilmadi"
+        ]);
+        exit;
+    }
+
+    bot('sendVideo', [
+        'chat_id' => $cid,
+        'video' => $video_url,
+        'caption' => $matin,
+        'parse_mode' => 'html',
+        'reply_markup' => $ortga,
+    ]);
+    exit;
+}
+
+/* ================= TIKTOK ================= */
+if ($text && (strpos($text, "tiktok.com") !== false)) {
+
+    $loading = bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "📥 TikTok yuklanmoqda..."
+    ]);
+    $loadingMid = $loading->result->message_id ?? null;
+
+    $TikTok = fetchJson("https://tikwm.com/api/?url=" . urlencode($text));
+    $play = $TikTok['data']['play'] ?? null;
+
+    if ($loadingMid) {
+        bot('deleteMessage', ['chat_id' => $cid, 'message_id' => $loadingMid]);
+    }
+
+    if (!$play) {
+        bot('sendMessage', [
+            'chat_id' => $cid,
+            'text' => "❌ TikTok video topilmadi"
+        ]);
+        exit;
+    }
+
+    bot('sendVideo', [
+        'chat_id' => $cid,
+        'video' => $play,
+        'caption' => $matin,
+        'parse_mode' => 'html',
+        'reply_markup' => $ortga,
+    ]);
+    exit;
+}
+
+/* ================= YOUTUBE ================= */
+if ($text && (strpos($text, "youtu.be") !== false || strpos($text, "youtube.com") !== false)) {
+
+    $loading = bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "📥 YouTube yuklanmoqda..."
+    ]);
+    $loadingMid = $loading->result->message_id ?? null;
+
+    $api_url = "https://4503091-gf96974.twc1.net/Api/YouTube.php?url=" . urlencode($text);
+    $natija = fetchJson($api_url);
+
+    if ($loadingMid) {
+        bot('deleteMessage', ['chat_id' => $cid, 'message_id' => $loadingMid]);
+    }
+
+    $video_title = $natija['title'] ?? '';
+    $video_url = $natija['video_with_audio'][0]['url'] ?? null;
+
+    if (!$video_url) {
+        bot('sendMessage', [
+            'chat_id' => $cid,
+            'text' => "❌ YouTube video topilmadi"
+        ]);
+        exit;
+    }
+
+    bot('sendVideo', [
+        'chat_id' => $cid,
+        'video' => $video_url,
+        'caption' => "$video_title\n\n$matin",
+        'parse_mode' => 'html',
+        'reply_markup' => $ortga,
+    ]);
+    exit;
+}
+
+/* ================= MUSIC SEARCH ================= */
+if ($text && !preg_match('/^\//', $text) && !preg_match('/https?:\/\//', $text)) {
+
+    $loading = bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "🔍 <b>Qidirilmoqda:</b> $text",
+        'parse_mode' => 'html'
+    ]);
+    $loading_mid = $loading->result->message_id ?? null;
+
+    $musicList = searchMusic($text);
+
+    if ($loading_mid) {
+        bot('deleteMessage', ['chat_id' => $cid, 'message_id' => $loading_mid]);
+    }
+
+    if (!$musicList || empty($musicList)) {
+        bot('sendMessage', [
+            'chat_id' => $cid,
+            'text' => "😔 <b>\"$text\"</b> bo'yicha musiqa topilmadi",
+            'parse_mode' => 'html'
+        ]);
+        exit;
+    }
+
+    // Qidiruvni saqlash (unik ID bilan)
+    $search_id = time() . rand(100, 999);
+    saveSearch($search_id, $text);
+
+    $list = array_slice($musicList, 0, 10);
+    $inline_keyboard = [];
+    $msctitle = "";
+
+    foreach ($list as $index => $music) {
+        $number = $index + 1;
+        $artist = $music['artist'] ?? 'Unknown';
+        $title  = $music['title'] ?? 'Unknown';
+        $duration = $music['duration'] ?? '';
+
+        $msctitle .= "<b>$number.</b> $artist - $title";
+        if ($duration) $msctitle .= " [$duration]";
+        $msctitle .= "\n";
+
+        // Callback data: m_searchID_index (qisqa!)
+        $callback_data = "m_{$search_id}_{$index}";
+        
+        $row = $index < 5 ? 0 : 1;
+        $inline_keyboard[$row][] = [
+            'text' => "🎵 $number",
+            'callback_data' => $callback_data
+        ];
+    }
+
+    $inline_keyboard[] = [['text' => "❌ Yopish", 'callback_data' => "del"]];
+    $reply_markup = json_encode(['inline_keyboard' => $inline_keyboard]);
+
+    bot('sendMessage', [
+        'chat_id' => $cid,
+        'text' => "🎵 <b>Natijalar:</b> $text\n\n$msctitle\n📥 Raqamni bosing yuklab olish uchun!",
+        'parse_mode' => 'html',
+        'reply_markup' => $reply_markup
+    ]);
+    exit;
 }
-}
-
-if(in_array($cid,$admin)){}
-elseif(mb_stripos($blocks, $uid)!==false){
-bot('sendMessage',[
-'chat_id' =>$cid,
-'text'=>"<b>⚠️ Kechirasiz <a href = 'tg://user?id=$cid'>$name</a>
-
-📛 Siz botdan bloklangansiz!
-
-👨🏻‍💻 Blokdan chiqish uchun bot administratoriga murojaat qiling!</b>",
-'parse_mode' =>'html',
-'reply_markup'=>json_encode([
-'inline_keyboard'=>[
-[['text'=>"👨🏻‍💻 Administrator",'url'=>"tg://user?id=$administrator"],],
-]
-])
-]);
-return false;
-}
-
-if(in_array($cid,$admin)){}
-elseif($holat == "off"){
-bot('sendMessage',[
-'chat_id'=>$chat_id,
-'text'=>"<b>🛠 Texnik xizmat davom etmoqda!
-
-▪ Bot maʼmuriyati ushbu bot ichida baʼzi texnik ishlarni olib bormoqda.
-▪ Shu sababdan menyu adminlar tomonidan oʻchirilgan va hozirda foydalanuvchilar uchun mavjud emas.
-▪ Barcha funksiyalar tugallangandan keyin tiklanadi.
-
-🔰 Agar siz ushbu botning administratori boʻlsangiz, ushbu rejimni oʻchirib qoʻyishingiz mumkin!
-👉👨🏻‍💻 Boshqaruv paneli | ⚙ Bot sozlamalari.
-
-📝 Boshqalar uchun:
-ℹ️ Keyinroq qaytib keling va bot holatini tekshirish uchun /start tugmasini bosing!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>json_encode([
-'remove_keyboard'=>true,
-])
-]);
-return false;
-}
-
-if(isset($message) and ($channel == "true")){
-$ids = explode("\n",$kanal);
-$soni = substr_count($kanal,"@");
-
-foreach($ids as $id){
-$keyboards = [];
-$k=[];
-for ($for = 1; $for <= $soni; $for++) {
-$kanall=str_replace("@","",$ids[$for]);
-
-$keyboards[]=["text"=>"$for- kanal","url"=>"https://t.me/$kanall"];
-}
-
-$keyboard2=array_chunk($keyboards, 1);
-$keyboard=json_encode([
-'inline_keyboard'=>$keyboard2,
-]);
-}
-
-$get = bot('getChatMember',[
-'chat_id'=>$id,
-'user_id'=>$uid,
-])->result->status;
-
-if(in_array($cid,$admin)){}
-elseif($get == "member" or $get == "administrator" or $get == "creator"){
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"⛔️ <b>Botdan to'liq foydalanish uchun quyidagi kanallarga obuna bo'ling!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$keyboard,
-]); 
-return false;
-}
-}
-
-/*
-Instagram Save Bot Kodi
-
-Manba: @Org_Coder (chopilmasin)
-Tarqatildi: @TexnoPHPuz kanalida!
-*/
-
-if($text == "/start" or $text == $back){
-unlink("step/$cid/$cid.txt");
-unlink("step/$cid/@$bot.mp3");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🔗 Instagramdan reels havolasini olib botga yuboring!</b>",
-'parse_mode'=>'html',
-]);
-}
-
-if(mb_stripos($text, "instagram.com/reel") !== false){
-	bot('sendMessage',[
-	'chat_id'=>$cid,
-	'text'=>"<b>📥 Yuklanmoqda...</b>",
-	'parse_mode'=>html,
-	]);
-	$json = json_decode(file_get_contents("https://xuss.us/IG1/?url=$text"), true);
-	$url = $json['media'][0]['url'];
-	$description = $json['description'];
-	$author = $json['author'];
-	$comment_count = $json['comment_count'];
-	$count = $json['count'];
-if($count != "0"){
-	bot('deleteMessage',[
-	'chat_id'=>$cid,
-	'message_id'=>$mid + 1,
-	]);
-	bot('sendVideo',[
-	'chat_id'=>$cid,
-	'video'=>$url,
-	'caption'=>"<b>✅ Video yuklandi!</b>
-
-<blockquote><b>💬 Kommentariyalar soni:</b> $comment_count ta</blockquote>
-
-<b>📰 Tavsifi:</b> <code>$description</code>",
-	'parse_mode'=>html,
-	'reply_markup'=>json_encode([
-	'inline_keyboard'=>[
-	[['text'=>"🗑 O'chirish",'callback_data'=>"ochirish"]],
-	]])
-	]);
-	} else {
-		bot('deleteMessage',[
-	'chat_id'=>$cid,
-	'message_id'=>$mid + 1,
-	]);
-	bot('sendMessage',[
-	'chat_id'=>$cid,
-	'text'=>"<b>‼️ Video topilmadi, qaytadan to'g'ri havolani yuboring!</b>",
-	'parse_mode'=>html,
-	]);
-	}
-	}
-	
-if($data == "ochirish"){
-	bot('deleteMessage',[
-	'chat_id'=>$cid2,
-	'message_id'=>$mid2,
-	]);
-	bot('sendMessage',[
-	'chat_id'=>$cid2,
-	'text'=>"<b>‼️ O'chirish yakunlandi!
-<blockquote>🔗 Instagramdan reels havolasini olib botga yuboring!</blockquote></b>",
-	'parse_mode'=>html,
-	]);
-	}
-
-
-if($text == "📊 Statistika"){
-$get = substr_count($statistika,"\n");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👥 Bot foydalanuvchilari: $get ta
-⏰ Soat: $time | 📆 Sana: $sana</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-
-if($text == "/panel" or $text == "👨🏻‍💻 Boshqaruv paneli"){
-if(in_array($cid,$admin)){
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨🏻‍💻 Boshqaruv paneliga xush kelibsiz!
-📋 Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$panel,
-]);
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨🏻‍💻 Bu bo‘limni faqat bot administratori ishlata oladi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$menyu,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📝 Pochta tizimi"){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📝 Pochta tizimi boʻlimidasiz!
-📋 Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$message_manager,
-]);
-}
-}
-
-if($text == "💬 Forward xabar yuborish"){
-file_put_contents("step/$cid/$cid.txt","forward");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👥 Foydalanuvchilarga yuboriladigan xabarni forward qiling!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-'disable_web_page_preview'=>true,
-]);
-}
-
-if($step == "forward" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-unlink("step/$cid/$cid.txt");
-$explode = explode("\n",$statistika);
-foreach($explode as $id){
-$forward = bot('forwardMessage',[
-'chat_id' =>$id, 
-'from_chat_id' =>$cid, 
-'message_id' =>$mid, 
-]);
-}
-}
-
-if($forward){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👥 Forward xabaringiz barcha bot foydalanuvchilariga yuborildi!✅</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$message_manager,
-]);
-}
-
-if(in_array($cid,$admin)){
-if($text == "📢 Kanallar boshqaruvi"){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📢 Kanallar boshqaruvi boʻlimidasiz!
-📋 Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📢 Kanal qoʻshish"){
-file_put_contents("step/$cid/$cid.txt","kanal");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📡 Kanal qo‘shish uchun kanal havolasini yuboring:
-
-🔰 Masalan: @ITMaktabi_Pro</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-
-/*
-Instagram Save Bot Kodi
-
-Manba: @Org_Coder (chopilmasin)
-Tarqatildi: @TexnoPHPuz kanalida!
-*/
-
-if($step == "kanal" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-if(mb_stripos($kanal,"$text")!==false){
-}else{
-file_put_contents("data/kanal.txt","$kanal\n$text");
-file_put_contents("data/channel.txt","true");
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📡 Kanalingiz botga muvaffaqiyatli qo‘shildi!
-🤖 Endi botni kanalingizga admin qiling!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📢 Kanalni oʻchirish"){
-file_put_contents("step/$cid/$cid.txt","delete");
-$ids = explode("\n",$kanal);
-$soni = substr_count($kanal,"@");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📡 Kanalni oʻchirish uchun kanal havolasini yuboring!
-
-🔰 Masalan: @iUzBlogs
-
-👇 Botga ulangan kanallar:
-$kanal
-
-📝 Jami kanallar soni: $soni ta
-</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-
-
-if($step == "delete" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-if(mb_stripos($kanal,"$text")!==false){
-$k = str_replace("\n".$text."","",$kanal);
-file_put_contents("data/kanal.txt",$k);
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🔰 $text muvaffaqiyatli oʻchirildi! ✅</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📋 Kanallar roʻyxati"){
-if($kanal == null){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botga ulangan kanallar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Kanallar roʻyxati:
-$kanal</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📋 Kanallar roʻyxatini oʻchirish"){
-if($kanal == null){
-unlink("data/kanal.txt");
-unlink("data/channel.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botga ulangan kanallar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}else{
-unlink("data/kanal.txt");
-unlink("data/channel.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Kanallar roʻyxati muvaffaqiyatli oʻchirildi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$channel_manager,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "🔐 Blok tizimi"){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🔐 Blok tizimi boʻlimidasiz!
-📋 Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "✅ Blokdan olish"){
-file_put_contents("step/$cid/$cid.txt","unblock");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🚫 Blokdan olinadigan foydalanuvchini ID raqamini kiriting!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($step == "unblock" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-unlink("step/$cid/$cid.txt");
-if(mb_stripos($blocks, $text)==false){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨🏻‍💻 Ushbu foydalanuvchi botdan bloklanmagan!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}else{
-$bl = str_replace("$text", " ", $blocks);
-file_put_contents("data/blocks.txt", "$bl");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🔰 Foydalanuvchi blokdan olindi! ✅</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-bot('sendMessage',[
-'chat_id'=>$text,
-'text'=>"<b>🎉 Siz blokdan muvaffaqiyatli olindingiz!
-
-🔄 Yana botni ishlatishingiz mumkin!
-
-🤖 Botga qayta /start bosing ✅</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$menyu,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "❌ Bloklash"){
-file_put_contents("step/$cid/$cid.txt","block");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🚫 Bloklanadigan foydalanuvchini ID raqamini kiriting!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($step == "block" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-if(mb_stripos($blocks, $text)==false){
-file_put_contents("data/blocks.txt", "$blocks\n$text");
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>🔰 Foydalanuvchi bloklandi! ✅</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-bot('sendMessage',[
-'chat_id'=>$text,
-'text'=>"<b>🚫 Siz bizning botimizdan bloklandingiz!
-
-🔄 Endi botdan foydalana olmaysiz!
-
-👨‍💻 Blokdan chiqish uchun bot administratoriga murojaat qiling!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>json_encode([
-'remove_keyboard'=>true,
-])
-]);
-}else{
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨🏻‍💻 Ushbu foydalanuvchi botdan allaqachon bloklangan!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📋 Bloklanganlar roʻyxati"){
-if($blocks == null){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botdan bloklanganlar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botdan bloklanganlar roʻyxati:
-$blocks</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}
-}
-}
-
-/*
-Instagram Save Bot Kodi
-
-Manba: @Org_Coder (chopilmasin)
-Tarqatildi: @TexnoPHPuz kanalida!
-*/
-
-if(in_array($cid,$admin)){
-if($text == "📋 Bloklanganlar roʻyxatini oʻchirish"){
-if($blocks == null){
-unlink("data/blocks.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botdan bloklanganlar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}else{
-unlink("data/blocks.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Bloklanganlar roʻyxati muvaffaqiyatli oʻchirildi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$blok_manager,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "⚙ Bot sozlamalari"){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>⚙ Bot sozlamalari boʻlimidasiz!
-Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$bot_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "✅ Botni yoqish"){
-unlink("data/bot.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>⚠️ Bot muvaffaqiyatli yoqildi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$bot_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "❌ Botni o‘chirish"){
-file_put_contents("data/bot.txt","off");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>⚠️ Bot muvaffaqiyatli oʻchirildi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$bot_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "⭐️ Adminlar boshqaruvi"){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>⭐️ Adminlar boshqaruvi boʻlimidasiz!
-📋 Quyidagi boʻlimlardan birini tanlang!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "➕ Admin qoʻshish"){
-file_put_contents("step/$cid/$cid.txt","setadmins");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨🏻‍💻 Administrator qoʻshish uchun foydalanuvchi ID raqamini kiriting</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-
-if($step == "setadmins" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-if(is_numeric($text)){
-if(mb_stripos($statistika,$text)!==false){
-file_put_contents("data/admins.txt","$admins\n$text");
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📝 <a href = 'tg://user?id=$text'>$text</a> ID raqamli foydalanuvchi botga administrator qilib tayinlandi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-bot('sendMessage',[
-'chat_id'=>$text,
-'text'=>"<b>👨‍💻 Siz botga administrator qilib tayinlandingiz!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$menyu,
-]);
-}else{
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨‍💻 Ushbu foydalanuvchi bazada mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}else{
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 ID raqam kiritayotganda faqat raqamlardan foydalaning!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "🛑 Adminlikdan olish"){
-if($admins == null){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botda administratorlar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}else{
-file_put_contents("step/$cid/$cid.txt","deladmins");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>👨‍💻 Administratorni olib tashlash uchun foydalanuvchi ID raqamini kiriting</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$ortga,
-]);
-}
-}
-}
-
-if($step == "deladmins" and $text!= "/start" and $text!= $back and $text!= "👨🏻‍💻 Boshqaruv paneli"){
-if(is_numeric($text)){
-if(mb_stripos($admins,$text)!==false){
-unlink("step/$cid/$cid.txt");
-$ad = str_replace("\n".$text."","",$admins);
-file_put_contents("data/admins.txt",$ad);
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 <a href = 'tg://user?id=$text'>$text</a> ID raqamli foydalanuvchi bot administratorligidan olib tashlandi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-bot('sendMessage',[
-'chat_id'=>$text,
-'text'=>"<b>👨‍💻 Siz bot administratorligidan olib tashlandingiz!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$menyu,
-]);
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 <a href = 'tg://user?id=$text'>$text</a> ID raqamli foydalanuvchi botda administrator emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}else{
-unlink("step/$cid/$cid.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 ID raqam kiritayotganda faqat raqamlardan foydalaning!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📋 Adminlar roʻyxati"){
-if($admins == null){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botda administratorlar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}else{
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Administratorlar roʻyxati:
-$admins</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}
-}
-
-if(in_array($cid,$admin)){
-if($text == "📋 Adminlar roʻyxatini oʻchirish"){
-if($admins == null){
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Botda administratorlar mavjud emas!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}else{
-unlink("data/admins.txt");
-bot('sendMessage',[
-'chat_id'=>$cid,
-'text'=>"<b>📋 Administratorlar roʻyxati muvaffaqiyatli oʻchirildi!</b>",
-'parse_mode'=>'html',
-'reply_markup'=>$admins_manager,
-]);
-}
-}
-}
-
-/*
-Instagram Save Bot Kodi
-
-Manba: @Org_Coder (chopilmasin)
-Tarqatildi: @TexnoPHPuz kanalida!
-*/
-?>
