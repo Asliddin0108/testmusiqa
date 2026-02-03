@@ -95,29 +95,33 @@ function downloadFile($url, $filename) {
 
 /* ================= MUSIQA QIDIRISH FUNKSIYASI ================= */
 function searchMusic($query) {
-    // 1-API: alijonov
+
+    // 1️⃣ API: alijonov
     $api1 = fetchJson("https://api.alijonov.uz/api/music.php?text=" . urlencode($query) . "&page=1");
-    if (isset($api1['data']) && !empty($api1['data'])) {
+    if (isset($api1['data']) && is_array($api1['data']) && count($api1['data']) > 0) {
         return $api1['data'];
     }
-    
-    // 2-API: brrfrr (zaxira)
+
+    // 2️⃣ API: bfrr (Yandex Music mirror)
     $api2 = fetchJson("https://bfrr-api.vercel.app/api/music?query=" . urlencode($query));
-    if (isset($api2['result']) && !empty($api2['result'])) {
-        $result = [];
-        foreach ($api2['result'] as $item) {
-            $result[] = [
-                'artist' => $item['artist'] ?? 'Unknown',
-                'title' => $item['title'] ?? 'Unknown',
-                'url' => $item['download'] ?? $item['url'] ?? null,
-                'duration' => $item['duration'] ?? ''
-            ];
+    if (isset($api2['result']) && is_array($api2['result']) && count($api2['result']) > 0) {
+        $out = [];
+        foreach ($api2['result'] as $m) {
+            if (!empty($m['download']) || !empty($m['url'])) {
+                $out[] = [
+                    'artist' => $m['artist'] ?? 'Unknown',
+                    'title' => $m['title'] ?? 'Unknown',
+                    'url' => $m['download'] ?? $m['url'],
+                    'duration' => $m['duration'] ?? ''
+                ];
+            }
         }
-        return $result;
+        if ($out) return $out;
     }
-    
+
     return null;
 }
+
 
 // ========== UPDATE ==========
 $update = json_decode(file_get_contents('php://input'));
@@ -316,33 +320,27 @@ if ($text && strpos($text, "instagram.com") !== false) {
     ]);
     $loadingMid = $loading->result->message_id ?? null;
 
-    $api_url = "https://xuss.us/IG1/?url=" . urlencode($text);
-    $json = fetchJson($api_url);
-
-    $video_url = $json['video'] 
-        ?? $json['url'] 
-        ?? $json['data']['video'] 
-        ?? $json['videos'][0]['url'] 
-        ?? null;
+    $api = fetchJson("https://api.rapidsave.com/api/convert?url=" . urlencode($text));
 
     if ($loadingMid) {
         bot('deleteMessage', ['chat_id' => $cid, 'message_id' => $loadingMid]);
     }
 
-    if (!$video_url) {
+    $video = $api['media'][0]['url'] ?? null;
+
+    if (!$video) {
         bot('sendMessage', [
             'chat_id' => $cid,
-            'text' => "❌ Instagram video topilmadi"
+            'text' => "❌ Instagram video topilmadi (API javob bermadi)"
         ]);
         exit;
     }
 
     bot('sendVideo', [
         'chat_id' => $cid,
-        'video' => $video_url,
+        'video' => $video,
         'caption' => $matin,
-        'parse_mode' => 'html',
-        'reply_markup' => $ortga,
+        'reply_markup' => $ortga
     ]);
     exit;
 }
